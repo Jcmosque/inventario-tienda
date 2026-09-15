@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventario Tienda Mascotas</title>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --primary: #4a7c59;
+    --primary-dark: #375f42;
+    --bg: #f4f6f4;
+    --card: #ffffff;
+    --danger: #c0392b;
+    --text: #2c2c2c;
+    --border: #dde3dd;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 80px;
+  }
+  header {
+    background: var(--primary);
+    color: white;
+    padding: 16px;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.3em;
+  }
+  .container {
+    padding: 16px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .btn {
+    display: inline-block;
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1.05em;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.15s;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:active { background: var(--primary-dark); }
+  .btn-secondary { background: #e8ece8; color: var(--text); }
+  .btn-secondary:active { background: #d5ddd5; }
+  .btn-danger { background: var(--danger); color: white; }
+  input, select {
+    width: 100%;
+    padding: 12px;
+    font-size: 1em;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: white;
+    color: var(--text);
+  }
+  label {
+    font-size: 0.85em;
+    color: #666;
+    margin-bottom: 4px;
+    display: block;
+    font-weight: 600;
+  }
+  #reader {
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    margin-bottom: 10px;
+  }
+  #reader video { width: 100%; display: block; }
+  .product-info {
+    background: #eef5ee;
+    border: 1px solid #c9dfc9;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .product-info .pname { font-weight: 700; font-size: 1.1em; }
+  .product-info .pcat { color: #567; font-size: 0.9em; }
+  .qty-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .qty-row button {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: var(--primary);
+    color: white;
+    font-size: 1.5em;
+    cursor: pointer;
+  }
+  .qty-row input {
+    text-align: center;
+    font-size: 1.3em;
+    margin: 0;
+    flex: 1;
+  }
+  .list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .list-item:last-child { border-bottom: none; }
+  .list-item .info { flex: 1; }
+  .list-item .info .n { font-weight: 600; }
+  .list-item .info .c { font-size: 0.8em; color: #888; }
+  .list-item .q {
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-size: 1.2em;
+    margin-right: 10px;
+  }
+  .list-item .del {
+    background: none;
+    border: none;
+    color: var(--danger);
+    font-size: 1.3em;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  .tabs {
+    display: flex;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .tab {
+    flex: 1;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    font-weight: 600;
+    color: #888;
+    background: white;
+  }
+  .tab.active {
+    color: white;
+    background: var(--primary);
+  }
+  .hidden { display: none !important; }
+  .search-box { margin-bottom: 12px; }
+  .empty-msg {
+    text-align: center;
+    color: #999;
+    padding: 30px 0;
+  }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 30px;
+    font-size: 0.95em;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    max-width: 90%;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .manual-toggle {
+    text-align: center;
+    color: var(--primary-dark);
+    font-size: 0.9em;
+    margin-top: 6px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .field-wrap {
+    position: relative;
+  }
+  .hint {
+    font-size: 0.78em;
+    color: #999;
+    margin: -6px 0 10px 0;
+  }
+  #fileImport { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🐾 Inventario Tienda</h1>
+</header>
+
+<div class="container">
+
+  <div class="tabs">
+    <div class="tab active" data-tab="scan">Escanear</div>
+    <div class="tab" data-tab="list">Inventario</div>
+  </div>
+
+  <!-- TAB ESCANEAR -->
+  <div id="tab-scan">
+    <div class="card">
+      <div id="reader" class="hidden"></div>
+      <button class="btn btn-primary" id="btnStartScan">📷 Escanear código de barras</button>
+      <button class="btn btn-secondary hidden" id="btnStopScan">Detener cámara</button>
+      <div class="manual-toggle" id="toggleManual">O escribir el código a mano</div>
+      <div id="manualEntry" class="hidden" style="margin-top:10px;">
+        <label>Código de barras</label>
+        <input type="text" id="manualCode" inputmode="numeric" placeholder="Ej: 8410000012345">
+        <button class="btn btn-primary" id="btnManualSearch">Buscar / usar este código</button>
+      </div>
+    </div>
+
+    <div class="card hidden" id="resultCard">
+      <div id="existingInfo" class="product-info hidden">
+        <div class="pname" id="pName"></div>
+        <div class="pcat" id="pCat"></div>
+      </div>
+
+      <div id="newProductForm" class="hidden">
+        <label>Código escaneado</label>
+        <input type="text" id="newCode" disabled>
+        <label>Nombre del producto</label>
+        <input type="text" id="newName" placeholder="Ej: Pienso Perro Adulto 3kg" autocomplete="off">
+        <div class="hint">Puedes usar el micrófono del teclado para dictar el nombre</div>
+        <label>Categoría</label>
+        <input type="text" id="newCat" list="catList" placeholder="Ej: Alimento perro" autocomplete="off">
+        <div class="hint">Puedes usar el micrófono del teclado para dictar la categoría</div>
+        <datalist id="catList"></datalist>
+      </div>
+
+      <label>Cantidad</label>
+      <div class="qty-row">
+        <button id="qtyMinus">−</button>
+        <input type="number" id="qtyInput" value="1" min="1">
+        <button id="qtyPlus">+</button>
+      </div>
+
+      <button class="btn btn-primary" id="btnConfirm">✔ Confirmar y añadir al inventario</button>
+      <button class="btn btn-secondary" id="btnCancel">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- TAB INVENTARIO -->
+  <div id="tab-list" class="hidden">
+    <div class="card">
+      <input type="text" id="searchBox" class="search-box" placeholder="🔍 Buscar por nombre o categoría...">
+      <div id="listContainer"></div>
+      <div id="emptyMsg" class="empty-msg hidden">Aún no hay productos en el inventario.</div>
+    </div>
+    <div class="card">
+      <button class="btn btn-primary" id="btnExport">⬇ Exportar a Excel</button>
+      <button class="btn btn-secondary" id="btnImportBtn">⬆ Importar productos desde Excel</button>
+      <input type="file" id="fileImport" accept=".xlsx,.xls,.csv">
+      <div class="hint" style="margin-top:6px;">El Excel debe tener columnas: Código de barras, Nombre, Categoría y opcionalmente Cantidad.</div>
+      <button class="btn btn-danger" id="btnClearAll" style="margin-top:8px;">🗑 Borrar todo el inventario</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== ALMACENAMIENTO =====
+const DB_KEY = 'inventario_mascotas_db_v1';
+
+function loadDB() {
+  try {
+    return JSON.parse(localStorage.getItem(DB_KEY)) || {};
+  } catch(e) { return {}; }
+}
+function saveDB(db) {
+  localStorage.setItem(DB_KEY, JSON.stringify(db));
+}
+let db = loadDB();
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2500);
+}
+
+// ===== TABS =====
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.tab;
+    document.getElementById('tab-scan').classList.toggle('hidden', target!=='scan');
+    document.getElementById('tab-list').classList.toggle('hidden', target!=='list');
+    if (target === 'list') renderList();
+    if (target !== 'scan') stopScanner();
+  });
+});
+
+// ===== ESCANEO =====
+let codeReader = null;
+let scanning = false;
+
+document.getElementById('btnStartScan').addEventListener('click', startScanner);
+document.getElementById('btnStopScan').addEventListener('click', stopScanner);
+
+function startScanner() {
+  const readerDiv = document.getElementById('reader');
+  readerDiv.classList.remove('hidden');
+  document.getElementById('btnStartScan').classList.add('hidden');
+  document.getElementById('btnStopScan').classList.remove('hidden');
+
+  codeReader = new ZXing.BrowserMultiFormatReader();
+  scanning = true;
+
+  codeReader.listVideoInputDevices().then(devices => {
+    if (!devices || devices.length === 0) {
+      toast('No se encontró ninguna cámara.');
+      stopScanner();
+      return;
+    }
+    let deviceId = devices[0].deviceId;
+    const back = devices.find(d => /back|trasera|rear|environment/i.test(d.label));
+    if (back) deviceId = back.deviceId;
+
+    codeReader.decodeFromVideoDevice(deviceId, 'reader', (result, err) => {
+      if (result && scanning) {
+        scanning = false;
+        const code = result.getText();
+        navigator.vibrate && navigator.vibrate(100);
+        stopScanner();
+        handleCode(code);
+      }
+    }).catch(e => {
+      toast('No se pudo acceder a la cámara.');
+      stopScanner();
+    });
+  }).catch(e => {
+    toast('No se pudo acceder a la cámara.');
+    stopScanner();
+  });
+}
+
+function stopScanner() {
+  scanning = false;
+  if (codeReader) {
+    try { codeReader.reset(); } catch(e){}
+    codeReader = null;
+  }
+  document.getElementById('reader').classList.add('hidden');
+  document.getElementById('reader').innerHTML = '';
+  document.getElementById('btnStartScan').classList.remove('hidden');
+  document.getElementById('btnStopScan').classList.add('hidden');
+}
+
+// ===== ENTRADA MANUAL =====
+document.getElementById('toggleManual').addEventListener('click', () => {
+  document.getElementById('manualEntry').classList.toggle('hidden');
+});
+document.getElementById('btnManualSearch').addEventListener('click', () => {
+  const code = document.getElementById('manualCode').value.trim();
+  if (!code) { toast('Escribe un código.'); return; }
+  handleCode(code);
+});
+
+// ===== MANEJO DE CÓDIGO =====
+let currentCode = null;
+
+function handleCode(code) {
+  currentCode = code;
+  document.getElementById('resultCard').classList.remove('hidden');
+  document.getElementById('qtyInput').value = 1;
+
+  if (db[code]) {
+    document.getElementById('existingInfo').classList.remove('hidden');
+    document.getElementById('newProductForm').classList.add('hidden');
+    document.getElementById('pName').textContent = db[code].name;
+    document.getElementById('pCat').textContent = db[code].category + '  ·  Stock actual: ' + db[code].qty;
+  } else {
+    document.getElementById('existingInfo').classList.add('hidden');
+    document.getElementById('newProductForm').classList.remove('hidden');
+    document.getElementById('newCode').value = code;
+    document.getElementById('newName').value = '';
+    document.getElementById('newCat').value = '';
+    populateCatList();
+  }
+  document.getElementById('resultCard').scrollIntoView({behavior:'smooth'});
+}
+
+function populateCatList() {
+  const cats = new Set(Object.values(db).map(p => p.category).filter(Boolean));
+  const dl = document.getElementById('catList');
+  dl.innerHTML = '';
+  cats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    dl.appendChild(opt);
+  });
+}
+
+document.getElementById('qtyMinus').addEventListener('click', () => {
+  const inp = document.getElementById('qtyInput');
+  inp.value = Math.max(1, (parseInt(inp.value)||1) - 1);
+});
+document.getElementById('qtyPlus').addEventListener('click', () => {
+  const inp = document.getElementById('qtyInput');
+  inp.value = (parseInt(inp.value)||1) + 1;
+});
+
+document.getElementById('btnCancel').addEventListener('click', resetScanForm);
+
+function resetScanForm() {
+  currentCode = null;
+  document.getElementById('resultCard').classList.add('hidden');
+  document.getElementById('manualCode').value = '';
+}
+
+document.getElementById('btnConfirm').addEventListener('click', () => {
+  if (!currentCode) return;
+  const qty = parseInt(document.getElementById('qtyInput').value) || 1;
+
+  if (db[currentCode]) {
+    db[currentCode].qty += qty;
+  } else {
+    const name = document.getElementById('newName').value.trim();
+    const cat = document.getElementById('newCat').value.trim();
+    if (!name) { toast('Ponle un nombre al producto.'); return; }
+    db[currentCode] = { name: name, category: cat || 'Sin categoría', qty: qty };
+  }
+  saveDB(db);
+  toast('✔ Guardado: ' + db[currentCode].name + ' (' + db[currentCode].qty + ')');
+  resetScanForm();
+});
+
+// ===== LISTADO / INVENTARIO =====
+document.getElementById('searchBox').addEventListener('input', renderList);
+
+function renderList() {
+  const container = document.getElementById('listContainer');
+  const emptyMsg = document.getElementById('emptyMsg');
+  const query = document.getElementById('searchBox').value.toLowerCase();
+
+  const entries = Object.entries(db).filter(([code, p]) => {
+    return p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query) || code.includes(query);
+  }).sort((a,b) => a[1].name.localeCompare(b[1].name));
+
+  container.innerHTML = '';
+  if (entries.length === 0) {
+    emptyMsg.classList.remove('hidden');
+    return;
+  }
+  emptyMsg.classList.add('hidden');
+
+  entries.forEach(([code, p]) => {
+    const div = document.createElement('div');
+    div.className = 'list-item';
+    div.innerHTML = `
+      <div class="info">
+        <div class="n">${escapeHtml(p.name)}</div>
+        <div class="c">${escapeHtml(p.category)} · ${escapeHtml(code)}</div>
+      </div>
+      <div class="q">${p.qty}</div>
+      <button class="del" data-code="${escapeHtml(code)}">✖</button>
+    `;
+    container.appendChild(div);
+  });
+
+  container.querySelectorAll('.del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.code;
+      if (confirm('¿Eliminar "' + db[code].name + '" del inventario?')) {
+        delete db[code];
+        saveDB(db);
+        renderList();
+      }
+    });
+  });
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// ===== EXPORTAR A EXCEL =====
+document.getElementById('btnExport').addEventListener('click', () => {
+  const entries = Object.entries(db);
+  if (entries.length === 0) { toast('No hay productos para exportar.'); return; }
+
+  const data = entries.map(([code, p]) => ({
+    'Código de barras': code,
+    'Nombre': p.name,
+    'Categoría': p.category,
+    'Cantidad': p.qty
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+
+  const now = new Date();
+  const fecha = now.toISOString().slice(0,10);
+  XLSX.writeFile(wb, `inventario_${fecha}.xlsx`);
+  toast('Excel exportado.');
+});
+
+// ===== IMPORTAR DESDE EXCEL =====
+document.getElementById('btnImportBtn').addEventListener('click', () => {
+  document.getElementById('fileImport').click();
+});
+
+document.getElementById('fileImport').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      let added = 0, updated = 0, skipped = 0;
+
+      rows.forEach(row => {
+        // Buscar las columnas de forma flexible (mayúsculas/minúsculas, con o sin tildes)
+        const keys = Object.keys(row);
+        const findKey = (patterns) => keys.find(k => patterns.some(p => k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(p)));
+
+        const codeKey = findKey(['codigo', 'barcode', 'ean']);
+        const nameKey = findKey(['nombre', 'producto', 'name']);
+        const catKey = findKey(['categoria', 'category']);
+        const qtyKey = findKey(['cantidad', 'stock', 'qty']);
+
+        if (!codeKey || !nameKey) { skipped++; return; }
+
+        const code = String(row[codeKey]).trim();
+        const name = String(row[nameKey]).trim();
+        const category = catKey ? String(row[catKey]).trim() : '';
+        const qty = qtyKey ? (parseInt(row[qtyKey]) || 0) : 0;
+
+        if (!code || !name) { skipped++; return; }
+
+        if (db[code]) {
+          updated++;
+        } else {
+          added++;
+        }
+        db[code] = {
+          name: name,
+          category: category || (db[code] ? db[code].category : 'Sin categoría'),
+          qty: qty || (db[code] ? db[code].qty : 0)
+        };
+      });
+
+      saveDB(db);
+      renderList();
+      toast(`Importado: ${added} nuevos, ${updated} actualizados, ${skipped} omitidos.`);
+    } catch (err) {
+      toast('Error al leer el archivo. Revisa el formato.');
+    }
+    e.target.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// ===== BORRAR TODO =====
+document.getElementById('btnClearAll').addEventListener('click', () => {
+  if (confirm('¿Seguro que quieres borrar TODO el inventario? Esta acción no se puede deshacer.')) {
+    db = {};
+    saveDB(db);
+    renderList();
+    toast('Inventario borrado.');
+  }
+});
+
+// Inicial
+renderList();
+</script>
+
+</body>
+</html>
