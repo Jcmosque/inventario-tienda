@@ -211,6 +211,27 @@
     margin: -6px 0 10px 0;
   }
   #fileImport { display: none; }
+  .suggestion-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    background: white;
+  }
+  .suggestion-item:last-child { border-bottom: none; }
+  .suggestion-item:active { background: #eef5ee; }
+  .suggestion-item .sn { font-weight: 600; font-size: 0.95em; }
+  .suggestion-item .sc { font-size: 0.8em; color: #888; }
+  .qty-edit {
+    width: 60px;
+    text-align: center;
+    padding: 6px 4px;
+    margin: 0 6px 0 0;
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-size: 1.1em;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
 </style>
 </head>
 <body>
@@ -234,9 +255,18 @@
       <button class="btn btn-secondary hidden" id="btnStopScan">Detener cámara</button>
       <div class="manual-toggle" id="toggleManual">O escribir el código a mano</div>
       <div id="manualEntry" class="hidden" style="margin-top:10px;">
-        <label>Código de barras</label>
-        <input type="text" id="manualCode" inputmode="numeric" placeholder="Ej: 8410000012345">
-        <button class="btn btn-primary" id="btnManualSearch">Buscar / usar este código</button>
+        <label>Buscar producto existente o escribir código nuevo</label>
+        <input type="text" id="manualCode" autocomplete="off" placeholder="Código, nombre o categoría...">
+        <div style="display:flex; gap:8px; align-items:center; margin:-4px 0 10px 0;">
+          <span class="hint" style="margin:0;">Ordenar lista por:</span>
+          <select id="manualSort" style="width:auto; margin:0; padding:6px 10px; font-size:0.85em;">
+            <option value="code">Código</option>
+            <option value="name">Nombre</option>
+            <option value="category">Categoría</option>
+          </select>
+        </div>
+        <div id="manualSuggestions" class="hidden" style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; margin:-4px 0 10px 0;"></div>
+        <button class="btn btn-primary" id="btnManualSearch">Usar este código</button>
       </div>
     </div>
 
@@ -273,7 +303,15 @@
   <!-- TAB INVENTARIO -->
   <div id="tab-list" class="hidden">
     <div class="card">
-      <input type="text" id="searchBox" class="search-box" placeholder="🔍 Buscar por nombre o categoría...">
+      <input type="text" id="searchBox" class="search-box" placeholder="🔍 Buscar por código, nombre o categoría...">
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+        <span class="hint" style="margin:0;">Ordenar por:</span>
+        <select id="listSort" style="width:auto; margin:0; padding:6px 10px; font-size:0.85em;">
+          <option value="name">Nombre</option>
+          <option value="code">Código</option>
+          <option value="category">Categoría</option>
+        </select>
+      </div>
       <div id="listContainer"></div>
       <div id="emptyMsg" class="empty-msg hidden">Aún no hay productos en el inventario.</div>
     </div>
@@ -331,26 +369,47 @@ let scanning = false;
 document.getElementById('btnStartScan').addEventListener('click', startScanner);
 document.getElementById('btnStopScan').addEventListener('click', stopScanner);
 
-function startScanner() {
+let currentStream = null;
+
+async function startScanner() {
   const readerDiv = document.getElementById('reader');
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('Este navegador no permite acceso a la cámara aquí.');
+    return;
+  }
+
   readerDiv.classList.remove('hidden');
   document.getElementById('btnStartScan').classList.add('hidden');
   document.getElementById('btnStopScan').classList.remove('hidden');
 
-  codeReader = new ZXing.BrowserMultiFormatReader();
-  scanning = true;
+  // Preparamos un elemento de video dentro de #reader para pintar la cámara
+  readerDiv.innerHTML = '<video id="scanVideo" autoplay playsinline muted style="width:100%;display:block;"></video>';
+  const videoEl = document.getElementById('scanVideo');
 
-  codeReader.listVideoInputDevices().then(devices => {
-    if (!devices || devices.length === 0) {
-      toast('No se encontró ninguna cámara.');
+  try {
+    // Pedimos la cámara trasera directamente vía getUserMedia (más fiable en móvil que enumerar dispositivos)
+    currentStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+  } catch (e1) {
+    // Si falla con facingMode ideal, probamos sin restricciones
+    try {
+      currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (e2) {
+      toast('Cámara bloqueada: ' + (e2.name || e2.message || 'error desconocido'));
       stopScanner();
       return;
     }
-    let deviceId = devices[0].deviceId;
-    const back = devices.find(d => /back|trasera|rear|environment/i.test(d.label));
-    if (back) deviceId = back.deviceId;
+  }
 
-    codeReader.decodeFromVideoDevice(deviceId, 'reader', (result, err) => {
+  videoEl.srcObject = currentStream;
+  scanning = true;
+
+  codeReader = new ZXing.BrowserMultiFormatReader();
+  try {
+    codeReader.decodeFromStream(currentStream, videoEl, (result, err) => {
       if (result && scanning) {
         scanning = false;
         const code = result.getText();
@@ -358,14 +417,11 @@ function startScanner() {
         stopScanner();
         handleCode(code);
       }
-    }).catch(e => {
-      toast('No se pudo acceder a la cámara.');
-      stopScanner();
     });
-  }).catch(e => {
-    toast('No se pudo acceder a la cámara.');
+  } catch (e3) {
+    toast('Error al leer el código: ' + (e3.message || e3));
     stopScanner();
-  });
+  }
 }
 
 function stopScanner() {
@@ -374,19 +430,71 @@ function stopScanner() {
     try { codeReader.reset(); } catch(e){}
     codeReader = null;
   }
+  if (currentStream) {
+    try { currentStream.getTracks().forEach(track => track.stop()); } catch(e){}
+    currentStream = null;
+  }
   document.getElementById('reader').classList.add('hidden');
   document.getElementById('reader').innerHTML = '';
   document.getElementById('btnStartScan').classList.remove('hidden');
   document.getElementById('btnStopScan').classList.add('hidden');
 }
 
-// ===== ENTRADA MANUAL =====
+// ===== ENTRADA MANUAL CON BUSCADOR =====
 document.getElementById('toggleManual').addEventListener('click', () => {
   document.getElementById('manualEntry').classList.toggle('hidden');
+  renderManualSuggestions();
 });
+
+document.getElementById('manualCode').addEventListener('input', renderManualSuggestions);
+document.getElementById('manualSort').addEventListener('change', renderManualSuggestions);
+
+function renderManualSuggestions() {
+  const box = document.getElementById('manualSuggestions');
+  const query = document.getElementById('manualCode').value.trim().toLowerCase();
+  const sortBy = document.getElementById('manualSort').value;
+
+  let entries = Object.entries(db);
+
+  if (query) {
+    entries = entries.filter(([code, p]) =>
+      code.toLowerCase().includes(query) ||
+      p.name.toLowerCase().includes(query) ||
+      p.category.toLowerCase().includes(query)
+    );
+  }
+
+  entries.sort((a, b) => {
+    if (sortBy === 'code') return a[0].localeCompare(b[0]);
+    if (sortBy === 'name') return a[1].name.localeCompare(b[1].name);
+    if (sortBy === 'category') return a[1].category.localeCompare(b[1].category);
+    return 0;
+  });
+
+  box.innerHTML = '';
+  if (entries.length === 0) {
+    box.classList.add('hidden');
+    return;
+  }
+
+  entries.slice(0, 50).forEach(([code, p]) => {
+    const div = document.createElement('div');
+    div.className = 'suggestion-item';
+    div.innerHTML = `<div class="sn">${escapeHtml(p.name)}</div><div class="sc">${escapeHtml(code)} · ${escapeHtml(p.category)}</div>`;
+    div.addEventListener('click', () => {
+      document.getElementById('manualCode').value = code;
+      box.classList.add('hidden');
+      handleCode(code);
+    });
+    box.appendChild(div);
+  });
+  box.classList.remove('hidden');
+}
+
 document.getElementById('btnManualSearch').addEventListener('click', () => {
   const code = document.getElementById('manualCode').value.trim();
-  if (!code) { toast('Escribe un código.'); return; }
+  if (!code) { toast('Escribe o selecciona un código.'); return; }
+  document.getElementById('manualSuggestions').classList.add('hidden');
   handleCode(code);
 });
 
@@ -461,15 +569,21 @@ document.getElementById('btnConfirm').addEventListener('click', () => {
 
 // ===== LISTADO / INVENTARIO =====
 document.getElementById('searchBox').addEventListener('input', renderList);
+document.getElementById('listSort').addEventListener('change', renderList);
 
 function renderList() {
   const container = document.getElementById('listContainer');
   const emptyMsg = document.getElementById('emptyMsg');
   const query = document.getElementById('searchBox').value.toLowerCase();
+  const sortBy = document.getElementById('listSort').value;
 
   const entries = Object.entries(db).filter(([code, p]) => {
-    return p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query) || code.includes(query);
-  }).sort((a,b) => a[1].name.localeCompare(b[1].name));
+    return p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query) || code.toLowerCase().includes(query);
+  }).sort((a,b) => {
+    if (sortBy === 'code') return a[0].localeCompare(b[0]);
+    if (sortBy === 'category') return a[1].category.localeCompare(b[1].category);
+    return a[1].name.localeCompare(b[1].name);
+  });
 
   container.innerHTML = '';
   if (entries.length === 0) {
@@ -486,10 +600,22 @@ function renderList() {
         <div class="n">${escapeHtml(p.name)}</div>
         <div class="c">${escapeHtml(p.category)} · ${escapeHtml(code)}</div>
       </div>
-      <div class="q">${p.qty}</div>
+      <input type="number" class="qty-edit" data-code="${escapeHtml(code)}" value="${p.qty}" min="0">
       <button class="del" data-code="${escapeHtml(code)}">✖</button>
     `;
     container.appendChild(div);
+  });
+
+  container.querySelectorAll('.qty-edit').forEach(input => {
+    input.addEventListener('change', () => {
+      const code = input.dataset.code;
+      let newQty = parseInt(input.value);
+      if (isNaN(newQty) || newQty < 0) newQty = 0;
+      db[code].qty = newQty;
+      saveDB(db);
+      input.value = newQty;
+      toast('Cantidad actualizada: ' + db[code].name + ' → ' + newQty);
+    });
   });
 
   container.querySelectorAll('.del').forEach(btn => {
